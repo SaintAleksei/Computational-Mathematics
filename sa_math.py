@@ -85,7 +85,7 @@ class LagrangePolynomial:
     return self.__x_values[idx], self.__func_values[idx]
 
   def __call__(self, target):
-    # TODO Add possibility use it with numpy arrays
+    # TODO Add possibility to use it with numpy arrays
     '''Compute polynomial value at given point (target)'''
     zero_idx = None
     target_mul = 1
@@ -110,16 +110,17 @@ class NewtonPolynomial:
   def __init__(self, x, y):
     '''Initialize polynomial from given iterables'''
     try:
+      # Input validation
       x = np.array(x, dtype=np.float64) 
       y = np.array(y, dtype=np.float64)
       if x.ndim != y.ndim != 1 or x.size != y.size != 0:
         raise ValueError('Bad x and y')
 
-      combined = np.vstack((x, y)).T
-      after_sort = np.sort(combined, axis=0)
-      x = after_sort.T[0]
-      y = after_sort.T[1]
+      # Sorting xy pairs by growth of x
+      # TODO
 
+      # Making N * N matrix with separate differences
+      # It is used to prevent O(2^N) recursion
       self.__x = x
       self.__y = y
       self.__sep_diffs = np.zeros((x.size, x.size))
@@ -129,7 +130,6 @@ class NewtonPolynomial:
           self.__sep_diffs[i, j] = self.__sep_diffs[i-1, j] -\
                                    self.__sep_diffs[i-1, j-1]
           self.__sep_diffs[i, j] /= self.__x[j] - self.__x[j-i]
-      print(self.__sep_diffs)
     except:
       print('Can\'t create Newton polynomial')
       raise
@@ -140,8 +140,9 @@ class NewtonPolynomial:
 
   def __call__(self, target):
     '''Compute polynomial at given point (target)'''
-    target_mul = self.__sep_diffs[0,0]
-    result = target_mul
+    # TODO Add possibility to use it with numpy arrays
+    result = self.__sep_diffs[0,0]
+    target_mul = 1
     for i in range(self.__x.size - 1):
       target_mul *= target - self.__x[i]
       result += target_mul * self.__sep_diffs[i+1,i+1]

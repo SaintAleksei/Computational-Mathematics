@@ -5,14 +5,13 @@ from sa_math import Interpolator, grid
 from matplotlib import pyplot as plt
 
 def func(x):
-  return x * np.sin(x)
+  return np.sin(x)
 
 segment = (0, 10)
-
+sampling = 20
 
 def main():
-  x, y = grid(func, segment, 10)
-  print(x, y)
+  x, y = grid(func, segment, sampling)
 
   inter = Interpolator(x, y)
   newton = inter.build_Newton()
@@ -23,14 +22,19 @@ def main():
   x_func = np.linspace(segment[0], segment[1], 1000)
   y_func = np.array([lagrange(v) for v in x_func])
   ax.plot(x_func, y_func, '-r', label='Полином Лагранжа')
-  ax.legend()
+  ax.legend(loc='lower right')
 
   fig, ax = plt.subplots()
   ax.plot(x, y, 'ob')
   y_func = np.array([newton(v) for v in x_func])
   ax.plot(x_func, y_func, '-r', label='Полином Ньютона')
-  ax.legend()
-
+  ax.legend(loc='lower right')
+  
+  fix, ax = plt.subplots()
+  y_diff = np.array([lagrange(v) - newton(v) for v in x_func])
+  ax.plot(x_func, y_diff, 'ob', label='Разница полиномов Ньютона и Лагранжа')
+  ax.legend(loc='lower right')
+  
   plt.show()
 
 if __name__ == '__main__':
