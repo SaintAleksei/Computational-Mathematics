@@ -1,5 +1,9 @@
 import numpy as np
 
+# FIXME Exception handling
+# FIXME Doc-strings
+# FIXME Refactor lines with more than 80 symbols
+
 def norm_decorator(function):
   def norm_wrapper(obj):
     try:
@@ -41,37 +45,221 @@ def grid(func, segment, sampling):
   x = np.linspace(segment[0], segment[1], sampling) 
   return x, func(x)
 
+def is_iterable(obj):
+  try:
+    iter(obj)
+  except TypeError:
+    return False
+  else:
+    return True
+
 class Integrator:
-  '''Integral calculation API'''
-  pass
+  '''Main integral calculation API'''
+  pass #TODO
 
 class Differentiator:
-  pass
+  '''Main derivative calculation API'''
+  pass #TODO
 
 class Equation:
-  pass
+  '''Main equation solving API'''
+  pass #TODO
 
 class DiffEquation:
-  pass
+  '''Main differental equations solving API'''
+  pass #TODO
 
-class LagrangePolynomial:
-  #TODO Add protection from different function values with the same argument
-  '''Representation of Langrange interpolation polynomial'''
+class InterpolatorBase:
+  '''Base class for interpolation API'''
+
   def __init__(self, x, y):
-    '''Initialize polynomial from given iterables'''
+    '''Initialization
+
+    Arguments:
+      x | array-like
+        - X axis values
+      y | array-like
+        - Y axis values'''
     try:
-      x = np.array(x, dtype=np.float64) 
-      y = np.array(y, dtype=np.float64)
-      if x.ndim != y.ndim != 1 or x.size != y.size:
+      # input validation
+      self._x = np.array(x, dtype=np.float64)
+      self._y = np.array(y, dtype=np.float64)
+      if self._x.ndim != self._y.ndim != 1 or\
+         self._x.size != self._y.size or\
+         self._x.size < 2:
         raise ValueError('Bad x and y')
-      self.__func_values = y
-      self.__x_values = x
+
+      # Sorting x and y by growth of x
+      to_sort = np.stack((self._x, self._y), axis=0)
+      self._x, self._y = to_sort[:,to_sort[0].argsort()]
+
+      # Chechking for different y with the same x
+      duplicated_y = set()
+      previous_x = None
+      for x, y in zip(self._x, self._y):
+        if x == previous_x:
+          if y in duplicated_y:
+            raise ValueError('Bad x and y')
+          else:
+            duplicated_y.add(y)
+        else:
+          duplicated_y = set()
+          previous_x = x
+          duplicated_y.add(y)
+    except:
+      print('Can\'t create interpolator')
+      raise
+
+  def _call(self, target):
+    '''Simple wrapper to make possible passing iterables to the arguments
+  
+    Arguments:
+      target | float-like or iterable with float-likes
+        - Point(s) at which calculate interpolated value
+
+    Return value | float-like or numpy.ndarray
+      - Result of calculation'''
+
+    if is_iterable(target):
+      iterable = map(self._calculate, target)
+      return np.fromiter(iterable, dtype=np.float64)
+    else:
+      return self._calculate(target)
+
+  def _calculate(self, target):
+    '''Calculation of interpolated value at given point (target)
+
+    Arguments:
+      target | float-like
+        - Point at which calculate interpolated value
+
+    Return value | float-like
+      - Result of calculation
+
+    Note: must be implemented in derived class before using'''
+
+    raise NotImplementedError('Not implemented');
+
+class Splines(InterpolatorBase):
+  '''Representation of spline's interpolation'''
+
+  def __init__(self, x, y, degree=3, init=True):
+    '''Initialize splines.
+
+    Arguments:
+      degree | int
+        - Degree of polynomials, default is 3
+      For other see InterpolatorBase'''
+
+    try:
+      # Small optimization if x and y are already initialized
+      if init:
+        super().__init__(x, y)
+      else:
+        self._x, self._y = x, y
       
-      self.__coeffs = np.full(self.__func_values.shape, 1, dtype=np.float64)
+      # Input validation
+      if type(degree) is not int:
+        raise TypeError(f'Bad type of degree, {int} is required')
+      if degree < 2:
+        raise ValueError('Bad degree')
+        
+      # Computing all polynomial's coefficients
+      self.__coeffs = np.zeros((self._x.size - 1, degree + 1))
+      start = self.__coeffs[0]
+      start[0] = self._y[0]
+      x_diff = self._x[1] - self._x[0]
+      x_diff_mul = x_diff
+      start[-1] = self._y[1] - start[0]
+      for i in range(1, start.size - 1):
+        start[i] = 0 # FIXME Think how to define this 'free' coefficients
+        start[-1] -= start[i] * x_diff_mul
+        x_diff_mul *= x_diff
+      start[-1] /= x_diff_mul
+      for i, row in enumerate(self.__coeffs[1:]):
+        row[0] = self._y[i+1]
+        x_diff = self._x[i+2] - self._x[i+1]
+        factors = np.ones(row.shape)
+        j_mul = 1
+        for j in range(1, row.size - 1):
+          x_diff_pow = 1
+          j_mul *= j
+          for k, val in enumerate(self.__coeffs[i][j:]):
+            factors[j+k] *= k + 1
+            row[j] += factors[j+k] * val * x_diff_pow / j_mul
+            x_diff_pow *= x_diff
+        x_diff_pow = 1
+        row[-1] = self._y[i+2]
+        for k, val in enumerate(row[:row.size-1]):
+          row[-1] -= val * x_diff_pow
+          x_diff_pow *= x_diff
+        row[-1] /= x_diff_pow
+    except:
+      print('Can\'t create splines')
+      raise
+
+  def __getitem__(self, idx):
+    '''Return xy pair at given index'''
+    return self._x[idx], self._y[idx]
+
+  def __call__(self, target):
+    return self._call(target)
+
+  def _calculate(self, target):
+    '''See InterpolatorBase'''
+
+    try:
+      # Type checking
+      target = float(target)
+
+      # Binary search of appropriate polynomial to calculate
+      if target < self._x[0] or target > self._x[-1]:
+        raise ValueError(f'Target is out of range')
+      search_step = (self._x.size - 1) // 4
+      if search_step == 0:
+        search_step = 1
+      search_idx  = (self._x.size - 1) // 2
+      while True:
+        if search_step != 1:
+          search_step //= 2
+        if self._x[search_idx] <= target:
+          if self._x[search_idx+1] >= target:
+            break
+          else:
+            search_idx += search_step 
+        else:
+          search_idx -= search_step
+
+      # Polynomial calculation
+      result = 0
+      target_mul = 1
+      for val in self.__coeffs[search_idx]:
+        result += val * target_mul
+        target_mul *= target - self._x[search_idx]
+
+      return result
+    except:
+      print('Can\'t compute spline\'s value')
+      raise
+
+class LagrangePolynomial(InterpolatorBase):
+  '''Representation of Langrange interpolation polynomial'''
+
+  def __init__(self, x, y, init=True):
+    '''See InterpolatorBase'''
+    try:
+      # Small optimization if x and y are already initialized
+      if init:
+        super().__init__(x, y)
+      else:
+        self._x, self._y = x, y
+      
+      # Computing coeffs
+      self.__coeffs = np.full(self._y.shape, 1, dtype=np.float64)
       for i in range(self.__coeffs.size):
-        for j, v in enumerate(self.__x_values):
+        for j, v in enumerate(self._x):
           if i != j:
-            self.__coeffs[i] *= self.__x_values[i] - v
+            self.__coeffs[i] *= self._x[i] - v
     except:
       print('Can\'t create Lagrange polynomial')
       raise
@@ -82,100 +270,111 @@ class LagrangePolynomial:
 
   def __getitem__(self, idx):
     '''Get xy pair from given index'''
-    return self.__x_values[idx], self.__func_values[idx]
+    return self._x_values[idx], self.__func_values[idx]
 
   def __call__(self, target):
-    # TODO Add possibility to use it with numpy arrays
-    '''Compute polynomial value at given point (target)'''
+    return self._call(target)
+
+  def _calculate(self, target):
+    '''See InterpolatorBase '''
     zero_idx = None
     target_mul = 1
-    for i, v in enumerate(self.__x_values):
+    for i, v in enumerate(self._x):
       if target - v == 0:
         zero_idx = i    
       else:
         target_mul *= target - v
 
     if zero_idx is not None:
-      return self.__func_values[zero_idx]
+      return self._y[zero_idx]
 
     result = 0.0
-    for x, f, c in zip(self.__x_values, self.__func_values, self.__coeffs):
+    for x, f, c in zip(self._x, self._y, self.__coeffs):
       result += target_mul / (target - x) * f / c
 
     return result
 
-class NewtonPolynomial:
-  #TODO Add protection from different function values with the same argument
+class NewtonPolynomial(InterpolatorBase):
   '''Representation of Newton interpolation polynomial'''
-  def __init__(self, x, y):
-    '''Initialize polynomial from given iterables'''
-    try:
-      # Input validation
-      x = np.array(x, dtype=np.float64) 
-      y = np.array(y, dtype=np.float64)
-      if x.ndim != y.ndim != 1 or x.size != y.size != 0:
-        raise ValueError('Bad x and y')
 
-      # Sorting xy pairs by growth of x
-      # TODO
+  def __init__(self, x, y, init=True):
+    '''See InterpolatorBase'''
+    try:
+      # Small optimization if x and y are already initialized
+      if init:
+        super().__init__(x, y)
+      else:
+        self._x, self._y = x, y
 
       # Making N * N matrix with separate differences
       # It is used to prevent O(2^N) recursion
-      self.__x = x
-      self.__y = y
+      self._x = x
+      self._y = y
       self.__sep_diffs = np.zeros((x.size, x.size))
       self.__sep_diffs[0] = np.copy(y)
       for i in range(1, x.size):
         for j in range(i, x.size):
           self.__sep_diffs[i, j] = self.__sep_diffs[i-1, j] -\
                                    self.__sep_diffs[i-1, j-1]
-          self.__sep_diffs[i, j] /= self.__x[j] - self.__x[j-i]
+          self.__sep_diffs[i, j] /= self._x[j] - self._x[j-i]
     except:
       print('Can\'t create Newton polynomial')
       raise
 
   def __getitem__(self, idx):
     '''Get xy pair from given index'''
-    return self.__x[idx], self.__y[idx]
+    return self._x[idx], self._y[idx]
 
   def __call__(self, target):
-    '''Compute polynomial at given point (target)'''
-    # TODO Add possibility to use it with numpy arrays
-    result = self.__sep_diffs[0,0]
-    target_mul = 1
-    for i in range(self.__x.size - 1):
-      target_mul *= target - self.__x[i]
-      result += target_mul * self.__sep_diffs[i+1,i+1]
+    return self._call(target)
 
-    return result
+  def _calculate(self, target):
+    '''Compute polynomial at given point (target)'''
+    try:
+      # Type checking
+      target = float(target)
+
+      # Polynomial calculation
+      result = self.__sep_diffs[0,0]
+      target_mul = 1
+      for i in range(self._x.size - 1):
+        target_mul *= target - self._x[i]
+        result += target_mul * self.__sep_diffs[i+1,i+1]
+
+      return result
+    except:
+      print('Can\'t calculate Newton polynomial')
+      raise
 
   def append(self, xy_pair):
     '''Append new xy pair to the end, O(N)'''
+    # FIXME Fix object integrity loss in case of exception
     try: 
-      if self.__x[self.__x.size-1] >= xy_pair[0]:
+      if self._x[self._x.size-1] >= xy_pair[0]:
         raise ValueError('Appending makes x array unsorted')
 
-      self.__x = np.append(self.__x, xy_pair[0])
-      self.__y = np.append(self.__y, xy_pair[1])
+      self._x = np.append(self._x, xy_pair[0])
+      self._y = np.append(self._y, xy_pair[1])
       self.__sep_diffs = np.pad(self.__sep_diffs, ((0,1), (0,1)))
-      self.__sep_diffs[0][self.__x.size - 1] = xy_pair[1]
+      self.__sep_diffs[0][self._x.size - 1] = xy_pair[1]
       j = self.__sep_diffs.shape[1] - 1
       for i in range(1, self.__sep_diffs.shape[0]):
         self.__sep_diffs[i, j] = \
         self.__sep_diffs[i-1, j] - self.__sep_diffs[i-1,j-1]
-        self.__sep_diffs[i, j] /= self.__x[j] - self._x[j-i]
+        self.__sep_diffs[i, j] /= self._x[j] - self._x[j-i]
     except:
       print('Can\'t append xy pair')
       raise
 
   def delete(self):
     '''Delete xy pair from the end'''
+    # FIXME Fix object intergity loss in case of exception
     try:
-      if self.__x == 1:
+      if self._x == 1:
         raise ValueError('Deletion of the last element')
 
-      self.__x = np.delete(self.__x, self.__x.size - 1)
-      self.__y = np.delete(self.__y, self.__y.size - 1)
+      self._x = np.delete(self._x, self._x.size - 1)
+      self._y = np.delete(self._y, self._y.size - 1)
       self.__sep_diffs = np.delete(\
         self.__sep_diffs,\
         self.__sep_diffs.shape[0] - 1,\
@@ -188,70 +387,46 @@ class NewtonPolynomial:
       print('Can\'t delete xy pair')
       raise
 
-class Interpolator:
-  '''Interpolation API'''
-  def __init__(self, xdata, ydata):
-    '''Initialize Interpolator from given iterables'''
-    try:
-      xdata = np.array(xdata, dtype=np.float64)
-      ydata = np.array(ydata, dtype=np.float64)
-      if xdata.ndim != ydata.ndim != 1 or xdata.size != ydata.size:
-        raise ValueError('Bad xdata and ydata')
-
-      self.__x = xdata
-      self.__y = ydata
-    except:
-      print(f'Can\'t create {type(self)}')
-      raise
+class Interpolator(InterpolatorBase):
+  '''Main interpolation API'''
+  def __init__(self, x, y):
+    super().__init__(x, y)
 
   def __setitem__(self, idx, xy_pair):
     '''Set xy pair'''
-    try:
-      if type(idx) is not int:
-        raise TypeError(f'Bad type of idx \'{type(idx)}\'; \'{int}\' required')
-
-      if idx >= self.__x.size:
-        raise ValueError(f'Bad idx \'{idx}\'')
-
-      self.__x[idx], self.__y[idx] = xy_pair[0], xy_pair[1]
-    except:
-      print(f'Can\'t set xy pair')
-      raise
+    self._x[idx], self._y[idx] = xy_pair[0], xy_pair[1]
 
   def __getitem__(self, idx):
     '''Get xy pair'''
-    try:
-      if type(idx) is not int:
-        raise TypeError(f'Bad type of idx \'{type(idx)}\'; \'{int}\' required')
-
-      if idx >= self.__x.size:
-        raise ValueError(f'Bad idx \'{idx}\'')
-
-      return self.__x[idx], self.__y[idx]
-    except:
-      print('Can\'t get xy pair')
-      raise
+    return self._x[idx], self._y[idx]
 
   def append(self, xy_pair):
     '''Append new xy pair'''
     try:
-      self.__x = np.append(self.__x, xy_pair[0])
-      self.__y = np.append(self.__y, xy_pair[0])
+      new_x = np.append(self._x, xy_pair[0])
+      new_y = np.append(self._y, xy_pair[0])
     except:
       print('Can\'t append value')
       raise
+    else:
+      self._x = new_x
+      self._y = new_y
 
   def delete(self, idx):
     #TODO
     pass
 
   def build_Lagrange(self):
-    '''Create instance of Lagrange polynomial'''
-    return LagrangePolynomial(self.__x, self.__y)
+    '''See LagrangePolynomial'''
+    return LagrangePolynomial(self._x, self._y, init=False)
 
   def build_Newton(self):
-    '''Create instance of Newton polynomial'''
-    return NewtonPolynomial(self.__x, self.__y)
+    '''See NewtonPolynomial'''
+    return NewtonPolynomial(self._x, self._y, init=False)
+
+  def build_Splines(self, degree=3):
+    '''See Splines'''
+    return Splines(self._x, self._y, degree=degree, init=False)
 
 class SLAE:
   '''System of Linear Algrebraic Equations solver'''
@@ -319,16 +494,6 @@ class SLAE:
       return matrix.T[matrix.shape[1] - 1]
     except:
       print('Can\'t solve SLAE by Gaus method')
-      raise
-
-  def solve_sweep(self):
-    # TODO Doc-string
-
-    try:
-      # TODO
-      pass
-    except:
-      print('Can\'t solve SLAE by Sweep method')
       raise
 
   def solve_Jacobi(self, **kwargs):
@@ -542,7 +707,7 @@ class SLAE:
       print('Can\'t solve SLAE by iteration method')
       raise
 
-# TODO Should be moved to Differentiator API
+# FIXME Should be moved to Differentiator API and refactored
 
 def compute_undef_coeffs(idx_start, idx_end, deriv_number):
     assert(isinstance(idx_start, int))
