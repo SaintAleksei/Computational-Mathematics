@@ -42,6 +42,7 @@ def norm3(obj):
     return np.sqrt(max(np.linalg.eig(np.mul(obj.T, obj))[0]))
 
 def grid(func, segment, sampling):
+  # FIXME GridFunction.from_callable should be used instead of it
   x = np.linspace(segment[0], segment[1], sampling) 
   return x, func(x)
 
@@ -53,20 +54,102 @@ def is_iterable(obj):
   else:
     return True
 
-class Integrator:
-  '''Main integral calculation API'''
-  pass #TODO
+# TODO It should be parent class for all classes with grid function
+class GridFunction:
+  '''Base class with grid function API'''
 
-class Differentiator:
-  '''Main derivative calculation API'''
+  def __init__(self, x, y):
+    '''Initialization
+
+    Arguments:
+      x | array-like
+        - X axis values
+      y | array-like
+        - Y axis values'''
+    try:
+      # input validation
+      self._data = np.stack((x, y), dtype=np.float64)
+      if self._data.ndim != 2 or self._data.shape[0] != 2 or\
+         self._data.shape[1] < 2:
+        raise ValueError('Bad x and y')
+
+    except:
+      print('Can\'t create grid function')
+      raise
+
+  def __getitem__(self, idx):
+    return self._data[0][idx], self._data[1][idx]
+
+  def __setitem__(self, idx, xy_pair):
+    self._data[:,idx] = xy_pair
+  
+  def __add__(self, another):
+    '''Object concatenation'''
+    if type(another) is not type(self):
+      raise TypeError(f'Bad type right operand {type(another)}')
+
+    self._data = np.concatenate((self._data, another._data), axis=1)
+
+  def insert(self, idx, xy_pair):
+    '''Insert new x and y pairs at the given indices
+
+    Arguments:
+      idx | See np.insert 
+        - Index at which to insert
+      xy_pair | (x, y) tuple or list of this tuples
+        - Pairs to insert'''
+    self._data = np.insert(self._data.T, idx, xy_pair, axis=0).T
+
+  def delete(self, idx):
+    '''Delete x and y pairs at given indices
+
+    See np.delete'''
+
+    self._data = np.delete(sel._data, idx, axis=1)
+
+  def sort(self):
+    '''Sorting x and y by growth of'''
+    to_sort = np.stack((self._x, self._y), axis=0)
+    self._data = self._data[:,self._data[0].argsort()]
+
+  def check(self):
+    '''Chechking for different y with the same x'''
+    to_check = self._data[:,self._data[0].argsort()]
+    duplicated_y = set()
+    previous_x = None
+    for x, y in to_check.T:
+      if x == previous_x:
+        if y in duplicated_y:
+          raise ValueError('Bad x and y')
+        else:
+          previous_x = x
+          duplicated_y.add(y)
+      else:
+        duplicated_y = set()
+        previous_x = x
+        duplicated_y.add(y)
+
+  @classmethod
+  def from_callable(cls, func, segment, sampling):
+    '''Create appropriate class instance from callable python object'''
+    try:
+      x = np.linspace(segment[0], segment[1], sampling) 
+      return cls(x, func(x))
+    except:
+      print(f'Can\'t create {cls} from callable')
+      raise
+
+class DiffEquation:
+  '''Main differental equations solving API'''
   pass #TODO
 
 class Equation:
   '''Main equation solving API'''
   pass #TODO
 
-class DiffEquation:
-  '''Main differental equations solving API'''
+class Integrator:
+  '''Main integral calculation API'''
+  def __init__(self, x, y)
   pass #TODO
 
 class InterpolatorBase:
@@ -101,6 +184,7 @@ class InterpolatorBase:
           if y in duplicated_y:
             raise ValueError('Bad x and y')
           else:
+            previous_x = x
             duplicated_y.add(y)
         else:
           duplicated_y = set()
@@ -115,7 +199,7 @@ class InterpolatorBase:
   
     Arguments:
       target | float-like or iterable with float-likes
-        - Point(s) at which calculate interpolated value
+        - Point(s) at which to calculate interpolated value
 
     Return value | float-like or numpy.ndarray
       - Result of calculation'''
@@ -139,6 +223,25 @@ class InterpolatorBase:
     Note: must be implemented in derived class before using'''
 
     raise NotImplementedError('Not implemented');
+
+class CubicSplines(InterpolatorBase):
+  '''Representation of cubic spline's interpolation
+
+    Unlike Splines it create just cubic splines with
+  one additional condition: it nullify the second derivative on
+  the edges'''
+  def __init__(self, x, y, init=True):
+    try:
+      pass #TODO
+    except:
+      print('Can\'t create CubicSplines')
+      raise
+
+  def __call__(self, target):
+    return self._call(target)
+
+  def _calculate(self, target):
+    pass #TODO
 
 class Splines(InterpolatorBase):
   '''Representation of spline's interpolation'''
@@ -706,6 +809,10 @@ class SLAE:
     except:
       print('Can\'t solve SLAE by iteration method')
       raise
+
+class Differentiator:
+  '''Main derivative calculation API'''
+  pass #TODO
 
 # FIXME Should be moved to Differentiator API and refactored
 
