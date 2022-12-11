@@ -1,8 +1,13 @@
 import numpy as np
 
-# FIXME Exception handling
-# FIXME Doc-strings
-# FIXME Refactor lines with more than 80 symbols
+# - TODO Overall desctiption
+# - TODO Tests with execution time measurements
+
+# - FIXME Exception handling
+# - FIXME Doc-strings
+# - FIXME Refactor lines with more than 80 symbols
+# - FIXME Make GridFuncton base class for all classes thah use something
+# like a grid function
 
 def norm_decorator(function):
   def norm_wrapper(obj):
@@ -55,6 +60,7 @@ def is_iterable(obj):
     return True
 
 # TODO It should be parent class for all classes with grid function
+# TODO Think about smarter sorting
 class GridFunction:
   '''Base class with grid function API'''
 
@@ -72,7 +78,7 @@ class GridFunction:
       if self._data.ndim != 2 or self._data.shape[0] != 2 or\
          self._data.shape[1] < 2:
         raise ValueError('Bad x and y')
-
+      self.sort()
     except:
       print('Can\'t create grid function')
       raise
@@ -82,6 +88,7 @@ class GridFunction:
 
   def __setitem__(self, idx, xy_pair):
     self._data[:,idx] = xy_pair
+    self.sort()
   
   def __add__(self, another):
     '''Object concatenation'''
@@ -89,6 +96,7 @@ class GridFunction:
       raise TypeError(f'Bad type right operand {type(another)}')
 
     self._data = np.concatenate((self._data, another._data), axis=1)
+    self.sort()
 
   def insert(self, idx, xy_pair):
     '''Insert new x and y pairs at the given indices
@@ -99,6 +107,7 @@ class GridFunction:
       xy_pair | (x, y) tuple or list of this tuples
         - Pairs to insert'''
     self._data = np.insert(self._data.T, idx, xy_pair, axis=0).T
+    self.sort()
 
   def delete(self, idx):
     '''Delete x and y pairs at given indices
@@ -145,13 +154,173 @@ class DiffEquation:
 
 class Equation:
   '''Main equation solving API'''
-  pass #TODO
 
-class Integrator:
+  def __init__(self, func, deriv, nunknowns):
+    '''Initialize instance
+
+    Arguments:
+      func | callable
+        - Function representing equation in form F(X) = 0,
+        should return (N, ) vector
+      deriv | callable or None
+        - F'(X), should return (N, N) matrix
+      nunknowns | int
+        - Number of unknowns, N
+
+    Note: F((N,)) = (N,); F'((N,)) = (N, N)
+    '''
+
+    self._deriv = lambda arr: np.array(deriv(*arr), ndmin=2, dtype=np.float64)
+    self._func = lambda arr: np.array(func(*arr), ndmin=1, dtype=np.float64)
+    self._nunknowns = nunknowns
+
+  def solve_bisection(self, segment, accuracy=1e-3, iters=None):
+    '''Find root of equation in given segment'''
+
+    if type(segment) is not tuple:
+      raise TypeError(f'Segment of type {tuple} is required')
+    if len(segment) != 2:
+      raise ValueError(f'Segment in format (a, b) is required')
+
+    if self._nunknowns != 1:
+      raise RuntimeError(f'Bad number of unknowns for bisection method, should be 1')
+
+    a = np.array(segment[0], ndmin=1)
+    b = np.array(segment[1], ndmin=1)
+    if a >= b or\
+       self._func(a) * self._func(b) > 0:
+      raise ValueError(f'Bad segment') 
+
+    if iters is not None:
+      for _ in range(iters):
+        target = (a + b) / 2
+        if self._func(a) * self._func(target) < 0:
+          b = target
+        else:
+          a = target
+    else:
+      while abs(b - a) >= accuracy:
+        target = (a + b) / 2
+        if self._func(a) * self._func(target) <= 0:
+          b = target
+        else:
+          a = target
+
+    return target
+
+  def solve_Newton(self, slae_kwargs={}, **kwargs):
+    # TODO Check if it can be solved
+    '''Solve equation by Newton\'s method'''
+
+    if self._deriv is None:
+      raise RuntimeError('Derivative callable is required for Newton\'s method')
+
+    def Newton_iter(arr):
+        slae_matrix = self._deriv(arr)
+        slae_vector = - self._func(arr)
+        darr = SLAE(slae_matrix, slae_vector).solve_Gaus(**slae_kwargs)
+        return darr + arr
+
+    return type(self).solve_simple_iteration(\
+              Newton_iter,\
+              self._nunknowns,\
+              **kwargs)
+
+  def solve_relaxation(self, coeff=0.5, **kwargs):
+    # TODO Check if it can be solved
+    '''Solve equation by relaxation method'''
+
+    def relaxation_iter(arr):
+      return arr - coeff * self._func(arr)
+
+    return type(self).solve_simple_iteration(\
+              relaxation_iter,\
+              self._nunknowns,\
+              **kwargs)
+
+  @staticmethod
+  def solve_simple_iteration(iter_cb, nvars, start=None, accuracy=1e-3, \
+                             norm=norm1, iters=None, maxiters=1000):
+    # TODO Check if it can be solved
+    '''Solve equation by simple iteration method
+
+    Arguments:
+      iter_cb | callable
+        - Function of iteration process. Assumed X = iter_cb(X)
+      nvars | int
+        - Number of unknown variables, size of X vector
+      start | (nvars,) array-like
+        - Start X vector
+      accuaracy | float-like
+        - Accuracy to stop
+      norm | one of normN callables
+        - Norm to use
+      maxiters | int
+        - Maximum number of iteration
+
+    Return value | (nvars,) array-like
+      - Result vector'''
+
+    if not callable(iter_cb):
+      raise TypeError('iter_cb should be callable')
+
+    if start is None:
+      solution = np.zeros(nvars)
+    else:
+      solution = np.array(start, ndmin=1)
+
+    if solution.ndim != 1 or solution.size != nvars:
+      raise ValueError('Bad number of variables')
+
+    new_solution = iter_cb(solution)
+    if iters is not None:
+      for _ in range(iters):
+        solution = new_solution
+        new_solution = iter_cb(solution)
+
+      return new_solution
+    else:
+      for _ in range(maxiters):
+        if norm(new_solution - solution) < accuracy:
+          return new_solution
+        solution = new_solution
+        new_solution = iter_cb(solution)
+    
+      raise RuntimeError('Maximum number of iterations is reached')
+
+class Integrator(GridFunction):
   '''Main integral calculation API'''
-  def __init__(self, x, y)
+  def __init__(self, x, y):
+    super().__init__(x, y)
+    self.sort()
+
+  def compute_rectangle():
+    try:
+      result = 0.0 
+      for i in range(self._data.shape[0] - 1):
+        func = (self._data[1][i] + self._data[1][i+1]) / 2
+        dx = self._data[0][i+1] - self._data[0][i]
+        result += func * dx
+      return result
+    except:
+      print('Can\'t compute intergral with rectangle\'s method')
+      raise
+
+  def compute_trapezoidal():
+    try:
+      result = 0.0 
+      for i in range(self._data.shape[0] - 1):
+        func = (self._data[1][i] + self._data[1][i+1]) / 2
+        dx = self._data[0][i+1] - self._data[0][i]
+        result += func * dx
+      return result
+    except:
+      print('Can\'t compute intergral with rectangle\'s method')
+      raise
+    
   pass #TODO
 
+# FIXME Should be derived from GridFunction
 class InterpolatorBase:
   '''Base class for interpolation API'''
 
@@ -810,9 +979,14 @@ class SLAE:
       print('Can\'t solve SLAE by iteration method')
       raise
 
-class Differentiator:
+class Differentiator(GridFunction):
   '''Main derivative calculation API'''
-  pass #TODO
+  def __init__(self, x, y):
+    try:
+      super().__init__(x, y)
+    except:
+      print(f'Can\'t create {type(self)}')
+      raise
 
 # FIXME Should be moved to Differentiator API and refactored
 

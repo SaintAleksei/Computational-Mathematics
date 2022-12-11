@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# Example of using SLAE
+
 import sa_math as slae # Backward compatibility :)
 from matplotlib import pyplot as plt
 import numpy as np

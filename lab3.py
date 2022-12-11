@@ -1,11 +1,14 @@
 #!/usr/bin/python3
 
+# Example of using interpolation API
+
 import numpy as np
 from sa_math import Interpolator, grid
 from matplotlib import pyplot as plt
+from scipy import interpolate 
 
 def func(x):
-  return x**2 * np.sin(x)
+  return x ** 2
 
 def main(func, segment, sampling):
   # Creating grid from function
@@ -17,7 +20,6 @@ def main(func, segment, sampling):
   lagrange = inter.build_Lagrange()
   splines = dict()
   splines[3] = inter.build_Splines(degree=3)
-  splines[2] = inter.build_Splines(degree=2)
 
   # Lagrange's polynomial
   fig, ax = plt.subplots()
@@ -38,15 +40,16 @@ def main(func, segment, sampling):
   ax.plot(x_func, newton(x_func) - lagrange(x_func), 'ob',\
           label='Разница полиномов Ньютона и Лагранжа')
   ax.legend(loc='lower right')
-  fig, ax = plt.subplots()
 
   # Some splines
+  fig, ax = plt.subplots()
   ax.plot(x, y, 'ob')
-  ax.plot(x_func, splines[2](x_func), '-r', label='Квадратичные сплайны')
-  ax.plot(x_func, splines[3](x_func), '-g', label='Кубические сплайны')
+  #ax.plot(x_func, splines[3](x_func), '-r', label='Кубические сплайны')
+  scipy_spline = interpolate.CubicSpline(x, y)
+  ax.plot(x_func, scipy_spline(x_func), '-b', label='Другие кубические сплайны')
   ax.legend(loc='lower right')
 
   plt.show()
 
 if __name__ == '__main__':
-  main(func, (0, 5), 5)
+  main(func, (0, 15), 10)

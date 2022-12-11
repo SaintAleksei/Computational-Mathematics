@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# Examples of using differentiator API
+
 from sa_math import *
 import numpy as np
 from matplotlib import pyplot as plt
