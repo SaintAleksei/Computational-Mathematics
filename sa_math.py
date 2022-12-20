@@ -155,6 +155,8 @@ class DiffEquation:
 class Equation:
   '''Main equation solving API'''
 
+  # TODO Secant method
+
   def __init__(self, func, deriv, nunknowns):
     '''Initialize instance
 
@@ -172,10 +174,14 @@ class Equation:
 
     self._deriv = lambda arr: np.array(deriv(*arr), ndmin=2, dtype=np.float64)
     self._func = lambda arr: np.array(func(*arr), ndmin=1, dtype=np.float64)
+    # FIXME It was the easiest to divide systems from simple equations
+    self._deriv_crutch = deriv
+    self._func_crutch = func
     self._nunknowns = nunknowns
 
   def solve_bisection(self, segment, accuracy=1e-3, iters=None):
     '''Find root of equation in given segment'''
+    # FIXME Get rid of 'crutch'
 
     if type(segment) is not tuple:
       raise TypeError(f'Segment of type {tuple} is required')
@@ -183,28 +189,31 @@ class Equation:
       raise ValueError(f'Segment in format (a, b) is required')
 
     if self._nunknowns != 1:
-      raise RuntimeError(f'Bad number of unknowns for bisection method, should be 1')
+      raise RuntimeError(f'Bad number of unknowns for bisection method')
+    
+    a, b = float(segment[0]), float(segment[1])
 
-    a = np.array(segment[0], ndmin=1)
-    b = np.array(segment[1], ndmin=1)
     if a >= b or\
-       self._func(a) * self._func(b) > 0:
+       self._func_crutch(a) * self._func_crutch(b) > 0:
       raise ValueError(f'Bad segment') 
+
+    target = (a + b) / 2
 
     if iters is not None:
       for _ in range(iters):
-        target = (a + b) / 2
-        if self._func(a) * self._func(target) < 0:
+        if self._func_crutch(a) * self._func_crutch(target) <= 0:
           b = target
         else:
           a = target
+        target = (a + b) / 2
+
     else:
       while abs(b - a) >= accuracy:
-        target = (a + b) / 2
-        if self._func(a) * self._func(target) <= 0:
+        if self._func_crutch(a) * self._func_crutch(target) <= 0:
           b = target
         else:
           a = target
+        target = (a + b) / 2
 
     return target
 
@@ -218,6 +227,7 @@ class Equation:
     def Newton_iter(arr):
         slae_matrix = self._deriv(arr)
         slae_vector = - self._func(arr)
+        # FIXME Think about using faster method for SLAE solving here
         darr = SLAE(slae_matrix, slae_vector).solve_Gaus(**slae_kwargs)
         return darr + arr
 
@@ -237,6 +247,44 @@ class Equation:
               relaxation_iter,\
               self._nunknowns,\
               **kwargs)
+
+  # FIXME Maybe should be refactored, when I will be less tired
+  def solve_secant(self, x0=-1.0, x1=1.0, accuracy=1e-3, norm=norm1,\
+                   iters=None, maxiters=1000):
+    # TODO doc-string
+    # FIXME Get rid of 'crutch'
+    if self._nunknowns != 1:
+      raise ValueError('Bad number of unknowns for secant method')
+
+    x0, x1 = float(x0), float(x1)
+    f0, f1 = self._func_crutch(x0), self._func_crutch(x1)
+
+    if iters is not None:
+      x2 = x1
+
+      for _ in range(iters):
+        if (f1 - f0 == 0):
+          return x2
+
+        x2 = x1 - (x1 - x0) / (f1 - f0) * f1
+        x0 = x1
+        f0 = f1
+        x1 = x2
+        f1 = self._func_crutch(x1)
+
+      return x2
+    else:
+      for _ in range(maxiters):
+        x2 = x1 - (x1 - x0) / (f1 - f0) * f1
+        x0 = x1
+        f0 = f1
+        x1 = x2
+        f1 = self._func_crutch(x1)
+
+        if abs(f1) < accuracy:
+          return x2
+
+      raise RuntimeError('Maximum number of iterations is reached')
 
   @staticmethod
   def solve_simple_iteration(iter_cb, nvars, start=None, accuracy=1e-3, \
@@ -290,6 +338,9 @@ class Equation:
 
 class Integrator(GridFunction):
   '''Main integral calculation API'''
+
+  # TODO
+
   def __init__(self, x, y):
     super().__init__(x, y)
     self.sort()
@@ -317,8 +368,6 @@ class Integrator(GridFunction):
     except:
       print('Can\'t compute intergral with rectangle\'s method')
       raise
-    
-  pass #TODO
 
 # FIXME Should be derived from GridFunction
 class InterpolatorBase:
